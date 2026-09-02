@@ -20,6 +20,9 @@ struct CompletedRun: Identifiable, Codable {
 
     var distanceKm: Double { totalDistanceMeters / 1000.0 }
 
+    /// Whether this run is the current fastest on record.
+    var isPersonalBest: Bool { RunStore.shared.isPersonalBest(self) }
+
     /// Sum of positive altitude deltas along the route.
     var elevationGainMeters: Double {
         guard trajectory.count > 1 else { return 0 }
@@ -41,23 +44,5 @@ struct CompletedRun: Identifiable, Codable {
         let m = Int(avgPaceSecondsPerKm) / 60
         let s = Int(avgPaceSecondsPerKm) % 60
         return String(format: "%d'%02d\"", m, s)
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d, yyyy"
-        return f
-    }()
-
-    /// Adapts this record into the value type the Instagram recap card consumes.
-    func toRunSummary() -> RunSummary {
-        RunSummary(
-            distanceKm: distanceKm,
-            durationSeconds: durationSeconds,
-            avgPaceFormatted: avgPaceFormatted,
-            avgCadenceSPM: avgCadenceSPM,
-            elevationGainMeters: elevationGainMeters,
-            dateLabel: Self.dateFormatter.string(from: date).uppercased()
-        )
     }
 }

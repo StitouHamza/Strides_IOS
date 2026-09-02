@@ -29,6 +29,9 @@ struct RunSplit: Identifiable, Codable {
 
     /// A partial trailing split (e.g. the last 0.42 km) is flagged for the UI.
     var isPartial: Bool { distanceKm < 0.999 }
+
+    /// 1-based kilometer number (alias for `index`, used by the summary UI).
+    var kilometer: Int { index }
 }
 
 enum SplitCalculator {

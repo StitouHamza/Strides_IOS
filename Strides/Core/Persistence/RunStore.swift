@@ -40,6 +40,11 @@ final class RunStore {
         persist()
     }
 
+    /// All stored runs, newest first.
+    func allRuns() -> [CompletedRun] {
+        runs.sorted { $0.date > $1.date }
+    }
+
     func delete(_ run: CompletedRun) {
         runs.removeAll { $0.id == run.id }
         persist()

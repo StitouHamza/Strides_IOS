@@ -55,6 +55,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Features/ActivityKit/RunActivityAttributes.swift,
+				"Shared/Color+Hex.swift",
 			);
 			target = 5BFDE7923035FBF70027D4A4 /* StridesWidgetExtension */;
 		};

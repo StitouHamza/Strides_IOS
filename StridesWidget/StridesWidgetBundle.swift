@@ -11,6 +11,6 @@ import SwiftUI
 @main
 struct StridesWidgetBundle: WidgetBundle {
     var body: some Widget {
-        StridesWidgetLiveActivity()
+        RunActivityWidget()
     }
 }

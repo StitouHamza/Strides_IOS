@@ -2,210 +2,170 @@
 //  RunSummaryView.swift
 //  Strides
 //
-//  Features/Replay — post-run recap: speed-gradient route, headline stats,
-//  per-km splits, plus entry points to the 3D flyover and the shareable card.
-//
 
 import SwiftUI
+import MapKit
 
 struct RunSummaryView: View {
     let run: CompletedRun
-
     @Environment(\.dismiss) private var dismiss
-    @State private var showReplay = false
-    @State private var recapURL: URL?
-    @State private var isPersonalBest = false
-
-    private var fastestPace: Double {
-        run.splits.map(\.paceSecondsPerKm).filter { $0 > 0 }.min() ?? 0
-    }
-    private var slowestPace: Double {
-        run.splits.map(\.paceSecondsPerKm).max() ?? 0
-    }
+    @State private var showFlyover = false
+    @State private var showShareCard = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    if isPersonalBest {
-                        HStack(spacing: 8) {
-                            Image(systemName: "trophy.fill")
-                            Text("NEW PERSONAL BEST")
-                                .font(.system(.subheadline, design: .rounded, weight: .heavy))
-                                .tracking(1)
-                        }
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(StridesPalette.electricCyan)
-                        .clipShape(Capsule())
-                    }
+            ZStack {
+                StridesPalette.canvas.ignoresSafeArea()
 
-                    // Route map
-                    SpeedGradientMapView(trajectory: run.trajectory, interactive: true)
-                        .frame(height: 260)
-                        .clipShape(RoundedRectangle(cornerRadius: 24))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                        )
-                        .overlay(alignment: .bottomTrailing) {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // PB Banner Indicator
+                        if run.isPersonalBest {
+                            HStack(spacing: 8) {
+                                Image(systemName: "trophy.fill")
+                                    .foregroundColor(StridesPalette.voltageOrange)
+                                Text("NEW PERSONAL BENCHMARK")
+                                    .font(.system(size: 11, weight: .black, design: .rounded))
+                                    .tracking(2)
+                                    .foregroundColor(.white)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(StridesPalette.voltageOrange.opacity(0.12))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(StridesPalette.voltageOrange.opacity(0.3), lineWidth: 1))
+                            .padding(.top, 8)
+                        }
+
+                        // Route Map with Flyover Launcher
+                        ZStack(alignment: .bottomTrailing) {
+                            Map {
+                                ForEach(0..<max(0, run.trajectory.count - 1), id: \.self) { idx in
+                                    let p1 = run.trajectory[idx]
+                                    let p2 = run.trajectory[idx + 1]
+                                    MapPolyline(coordinates: [p1.coordinate, p2.coordinate])
+                                        .stroke(StridesPalette.speedColor(forMPS: p2.speedMPS), lineWidth: 4)
+                                }
+                            }
+                            .mapStyle(.standard(elevation: .realistic))
+                            .frame(height: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusLarge))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusLarge)
+                                    .stroke(StridesTheme.hairlineBorder, lineWidth: 1)
+                            )
+
                             Button {
-                                showReplay = true
+                                showFlyover = true
                             } label: {
-                                Label("3D Flyover", systemImage: "play.fill")
-                                    .font(.system(.subheadline, design: .rounded, weight: .heavy))
+                                Label("3D FLYOVER", systemImage: "play.fill")
+                                    .font(.system(size: 11, weight: .heavy, design: .rounded))
                                     .foregroundColor(.black)
                                     .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
+                                    .padding(.vertical, 8)
                                     .background(StridesPalette.voltageOrange)
                                     .clipShape(Capsule())
                             }
                             .padding(12)
                         }
 
-                    // Headline stats
-                    HStack(spacing: 12) {
-                        summaryStat("DISTANCE", String(format: "%.2f", run.distanceKm), "KM")
-                        summaryStat("TIME", formatDuration(run.durationSeconds), "")
-                        summaryStat("AVG PACE", run.avgPaceFormatted, "/KM")
-                    }
+                        // Telemetry Grid
+                        VStack(spacing: 10) {
+                            HStack(spacing: 10) {
+                                HUDMetricCard(title: "TOTAL DISTANCE", value: String(format: "%.2f", run.totalDistanceMeters / 1000.0), unit: "KM")
+                                HUDMetricCard(title: "AVG PACE", value: run.avgPaceFormatted, unit: "/KM", accentColor: StridesPalette.voltageOrange)
+                            }
+                            HStack(spacing: 10) {
+                                HUDMetricCard(title: "DURATION", value: formatDuration(run.durationSeconds), unit: "ELAPSED")
+                                HUDMetricCard(title: "AVG CADENCE", value: "\(run.avgCadenceSPM)", unit: "SPM")
+                            }
+                        }
 
-                    HStack(spacing: 12) {
-                        summaryStat("CADENCE", "\(run.avgCadenceSPM)", "SPM")
-                        summaryStat("ELEV GAIN", "\(Int(run.elevationGainMeters))", "M")
-                    }
+                        // Kilometer Splits Breakdown
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("INTERVAL SPLITS")
+                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .foregroundColor(.gray)
+                                .tracking(2)
 
-                    // Splits
-                    if !run.splits.isEmpty {
-                        splitsSection
-                    }
+                            ForEach(run.splits) { split in
+                                SplitBarRow(split: split, fastestSeconds: run.splits.map(\.durationSeconds).min() ?? 1)
+                            }
+                        }
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusMedium)
+                                .fill(StridesPalette.surface)
+                                .overlay(RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusMedium).stroke(StridesTheme.hairlineBorder, lineWidth: 1))
+                        )
 
-                    // Share
-                    shareButton
-                        .padding(.top, 4)
+                        // Action Deck
+                        Button("GENERATE RECAP CARD") {
+                            showShareCard = true
+                        }
+                        .buttonStyle(CockpitButtonStyle(baseColor: StridesPalette.voltageOrange, foregroundColor: .black, isHero: true))
+                        .padding(.top, 6)
+                    }
+                    .padding(16)
                 }
-                .padding()
             }
-            .background(StridesPalette.canvas.ignoresSafeArea())
-            .navigationTitle("Run Complete")
+            .navigationTitle("DEBRIEF")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("DONE") { dismiss() }
+                        .font(.system(size: 13, weight: .heavy, design: .rounded))
                         .foregroundColor(StridesPalette.voltageOrange)
                 }
             }
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .fullScreenCover(isPresented: $showReplay) {
-                RouteReplayView(run: run)
+            .fullScreenCover(isPresented: $showFlyover) {
+                Replay3DFlyoverView(run: run)
             }
-            .task {
-                // Pre-render the Instagram card so Share is instant.
-                recapURL = RunRecapRenderer.makePNGURL(for: run.toRunSummary())
-                isPersonalBest = RunStore.shared.isPersonalBest(run)
+            .sheet(isPresented: $showShareCard) {
+                ShareableRecapView(run: run)
             }
         }
-        .preferredColorScheme(.dark)
-    }
-
-    // MARK: - Sections
-
-    private var splitsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("SPLITS")
-                .font(.system(.caption, design: .rounded, weight: .bold))
-                .foregroundColor(.gray)
-                .tracking(2)
-
-            ForEach(run.splits) { split in
-                HStack(spacing: 12) {
-                    Text(split.isPartial ? String(format: "%.2f", split.distanceKm) : "\(split.index)")
-                        .font(.system(.subheadline, design: .monospaced, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 40, alignment: .leading)
-
-                    // Relative pace bar (fastest = full, slowest = short)
-                    GeometryReader { geo in
-                        Capsule()
-                            .fill(split.paceSecondsPerKm <= fastestPace + 0.01
-                                  ? StridesPalette.electricCyan
-                                  : StridesPalette.voltageOrange)
-                            .frame(width: geo.size.width * barFraction(for: split))
-                    }
-                    .frame(height: 10)
-
-                    Text(split.paceFormatted)
-                        .font(.system(.subheadline, design: .monospaced, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 64, alignment: .trailing)
-                }
-                .padding(.vertical, 6)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StridesPalette.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-    }
-
-    private var shareButton: some View {
-        Group {
-            if let recapURL {
-                ShareLink(item: recapURL) {
-                    Label("Share Recap Card", systemImage: "square.and.arrow.up")
-                        .font(.system(.headline, design: .rounded, weight: .heavy))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(StridesPalette.voltageOrange)
-                        .clipShape(Capsule())
-                }
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .tint(StridesPalette.voltageOrange)
-            }
-        }
-    }
-
-    // MARK: - Helpers
-
-    /// Maps a split's pace to a 0.15–1.0 bar width (faster = longer).
-    private func barFraction(for split: RunSplit) -> CGFloat {
-        guard slowestPace > fastestPace else { return 1.0 }
-        let t = (split.paceSecondsPerKm - fastestPace) / (slowestPace - fastestPace)
-        return CGFloat(1.0 - t * 0.85)
-    }
-
-    private func summaryStat(_ title: String, _ value: String, _ unit: String) -> some View {
-        VStack(spacing: 4) {
-            Text(title)
-                .font(.system(.caption2, design: .rounded, weight: .bold))
-                .foregroundColor(.gray)
-                .tracking(1)
-            HStack(alignment: .lastTextBaseline, spacing: 3) {
-                Text(value)
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-                if !unit.isEmpty {
-                    Text(unit)
-                        .font(.system(.caption2, design: .rounded, weight: .bold))
-                        .foregroundColor(StridesPalette.electricCyan)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(StridesPalette.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
-        let h = Int(duration) / 3600
-        let m = (Int(duration) % 3600) / 60
-        let s = Int(duration) % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+        let min = Int(duration) / 60
+        let sec = Int(duration) % 60
+        return String(format: "%02d:%02d", min, sec)
+    }
+}
+
+struct SplitBarRow: View {
+    let split: RunSplit
+    let fastestSeconds: Double
+
+    private var relativeRatio: CGFloat {
+        CGFloat(fastestSeconds / max(split.durationSeconds, 1.0))
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("KM \(split.kilometer)")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .frame(width: 44, alignment: .leading)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(StridesPalette.elevated)
+                        .frame(height: 6)
+
+                    Capsule()
+                        .fill(StridesPalette.voltageOrange)
+                        .frame(width: proxy.size.width * relativeRatio, height: 6)
+                }
+            }
+            .frame(height: 6)
+
+            Text(split.paceFormatted)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .frame(width: 52, alignment: .trailing)
+        }
     }
 }

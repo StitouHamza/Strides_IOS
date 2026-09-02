@@ -2,136 +2,134 @@
 //  RunHistoryView.swift
 //  Strides
 //
-//  Features/History — list of past runs. Rows reuse the post-run summary screen.
-//
 
 import SwiftUI
 
 struct RunHistoryView: View {
     @Environment(\.dismiss) private var dismiss
-    private var store = RunStore.shared
+    @State private var runs: [CompletedRun] = RunStore.shared.allRuns()
     @State private var selectedRun: CompletedRun?
-
-    /// Newest first.
-    private var runs: [CompletedRun] {
-        store.runs.sorted { $0.date > $1.date }
-    }
 
     var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
+                StridesPalette.canvas.ignoresSafeArea()
+
                 if runs.isEmpty {
-                    emptyState
+                    VStack(spacing: 12) {
+                        Image(systemName: "figure.run.circle")
+                            .font(.system(size: 48))
+                            .foregroundColor(StridesPalette.elevated)
+                        Text("NO MISSION LOGS")
+                            .font(.system(.headline, design: .rounded, weight: .heavy))
+                            .foregroundColor(.gray)
+                            .tracking(2)
+                    }
                 } else {
                     List {
                         ForEach(runs) { run in
-                            Button { selectedRun = run } label: {
-                                RunHistoryRow(run: run, isPB: store.isPersonalBest(run))
-                            }
-                            .listRowBackground(StridesPalette.surface)
-                            .listRowSeparatorTint(Color.white.opacity(0.08))
+                            HistoryRunCard(run: run)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .onTapGesture {
+                                    selectedRun = run
+                                }
                         }
-                        .onDelete(perform: delete)
+                        .onDelete(perform: deleteRun)
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                 }
             }
-            .background(StridesPalette.canvas.ignoresSafeArea())
-            .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("LOGBOOK")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("DONE") { dismiss() }
+                        .font(.system(size: 13, weight: .heavy, design: .rounded))
                         .foregroundColor(StridesPalette.voltageOrange)
                 }
             }
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .sheet(item: $selectedRun) { run in
                 RunSummaryView(run: run)
             }
         }
-        .preferredColorScheme(.dark)
     }
 
-    private func delete(at offsets: IndexSet) {
-        for index in offsets {
-            store.delete(runs[index])
+    private func deleteRun(at offsets: IndexSet) {
+        for idx in offsets {
+            RunStore.shared.delete(runs[idx])
         }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "figure.run.circle")
-                .font(.system(size: 52))
-                .foregroundColor(StridesPalette.voltageOrange)
-            Text("No runs yet")
-                .font(.system(.title3, design: .rounded, weight: .heavy))
-                .foregroundColor(.white)
-            Text("Start your first cruise to see it here.")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        runs.remove(atOffsets: offsets)
     }
 }
 
-private struct RunHistoryRow: View {
+struct HistoryRunCard: View {
     let run: CompletedRun
-    let isPB: Bool
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE, MMM d · h:mm a"
-        return f
-    }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 10) {
             HStack {
-                Text(Self.dateFormatter.string(from: run.date))
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                Text(run.date.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(.gray)
                 Spacer()
-                if isPB {
-                    HStack(spacing: 3) {
-                        Image(systemName: "trophy.fill")
-                        Text("PB")
-                    }
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(StridesPalette.electricCyan)
-                    .clipShape(Capsule())
+                if run.isPersonalBest {
+                    Text("PB")
+                        .font(.system(size: 9, weight: .black, design: .rounded))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(StridesPalette.voltageOrange)
+                        .clipShape(Capsule())
                 }
             }
 
-            HStack(alignment: .lastTextBaseline, spacing: 16) {
-                metric(String(format: "%.2f", run.distanceKm), "KM", tint: StridesPalette.voltageOrange)
-                metric(formatDuration(run.durationSeconds), "TIME", tint: .white)
-                metric(run.avgPaceFormatted, "/KM", tint: StridesPalette.electricCyan)
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(format: "%.2f", run.totalDistanceMeters / 1000.0))
+                        .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                        .foregroundColor(.white)
+                    Text("KM")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(StridesPalette.electricCyan)
+                }
+
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(run.avgPaceFormatted)
+                        .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                        .foregroundColor(.white)
+                    Text("PACE")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(.gray)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(formatDuration(run.durationSeconds))
+                        .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                        .foregroundColor(.white)
+                    Text("TIME")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(.gray)
+                }
             }
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-    }
-
-    private func metric(_ value: String, _ label: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundColor(tint)
-            Text(label)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(.gray)
-        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusMedium)
+                .fill(StridesPalette.surface)
+                .overlay(RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusMedium).stroke(StridesTheme.hairlineBorder, lineWidth: 1))
+        )
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
-        let h = Int(duration) / 3600
-        let m = (Int(duration) % 3600) / 60
-        let s = Int(duration) % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+        let min = Int(duration) / 60
+        let sec = Int(duration) % 60
+        return String(format: "%02d:%02d", min, sec)
     }
 }

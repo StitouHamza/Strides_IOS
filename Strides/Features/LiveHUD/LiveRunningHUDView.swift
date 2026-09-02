@@ -2,11 +2,6 @@
 //  LiveRunningHUDView.swift
 //  Strides
 //
-//  Features/LiveHUD — Telemetry cockpit dashboard.
-//
-//  NOTE: The `Color(hex:)` initializer now lives in Shared/Color+Hex.swift so it
-//  can be shared across features without a duplicate-declaration error.
-//
 
 import SwiftUI
 import MapKit
@@ -19,136 +14,116 @@ struct LiveRunningHUDView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: "09090B").ignoresSafeArea()
+            StridesPalette.canvas.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                // Header: title + history
+            VStack(spacing: 12) {
+                // Cockpit Header
                 HStack {
-                    Text("STRIDES")
-                        .font(.system(.title2, design: .rounded, weight: .black))
-                        .foregroundColor(.white)
-                        .tracking(2)
-                    Spacer()
-                    Button { showHistory = true } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
-                            .background(Color(hex: "1C1C22"))
-                            .clipShape(Circle())
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(telemetry.isRunning ? Color.green : StridesPalette.voltageOrange)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: (telemetry.isRunning ? Color.green : StridesPalette.voltageOrange).opacity(0.8), radius: 6)
 
-                // Top Live Minimap with Speed Polyline
-                ZStack(alignment: .topTrailing) {
+                        Text("STRIDES")
+                            .font(.system(.title3, design: .rounded, weight: .black))
+                            .foregroundColor(.white)
+                            .tracking(3)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        showHistory = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 42, height: 42)
+                            .background(StridesPalette.surface)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(StridesTheme.hairlineBorder, lineWidth: 1))
+                    }
+                    .sensoryFeedback(.impact(weight: .light), trigger: showHistory)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+
+                // Minimap Telemetry Panel
+                ZStack(alignment: .top) {
                     Map(position: $cameraPosition) {
                         ForEach(0..<max(0, telemetry.trajectory.count - 1), id: \.self) { idx in
                             let p1 = telemetry.trajectory[idx]
                             let p2 = telemetry.trajectory[idx + 1]
                             MapPolyline(coordinates: [p1.coordinate, p2.coordinate])
-                                .stroke(speedColor(for: p2.speedMPS), lineWidth: 4)
+                                .stroke(StridesPalette.speedColor(forMPS: p2.speedMPS), lineWidth: 4)
                         }
-                        // Ghost marker: where your PB was at this elapsed time.
+
                         if let ghost = telemetry.ghostCoordinate {
                             Annotation("Ghost", coordinate: ghost) {
-                                ZStack {
-                                    Circle().fill(StridesPalette.electricCyan.opacity(0.25)).frame(width: 30, height: 30)
-                                    Image(systemName: "figure.run")
-                                        .font(.system(size: 11, weight: .black))
-                                        .foregroundColor(.black)
-                                        .frame(width: 18, height: 18)
-                                        .background(StridesPalette.electricCyan)
-                                        .clipShape(Circle())
-                                }
+                                GhostDuelMarkerView()
                             }
                         }
                         UserAnnotation()
                     }
                     .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-                    .frame(height: 240)
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .frame(height: 190)
+                    .clipShape(RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusLarge))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusLarge)
+                            .stroke(StridesTheme.hairlineBorder, lineWidth: 1)
                     )
 
-                    // Cadence / GPS Quality Pill
-                    HStack(spacing: 6) {
-                        Circle().fill(Color.green).frame(width: 8, height: 8)
-                        Text("\(telemetry.currentCadenceSPM) SPM")
-                            .font(.system(.caption2, design: .monospaced, weight: .bold))
-                            .foregroundColor(.white)
+                    // HUD Overlays
+                    HStack {
+                        if telemetry.isGhostActive {
+                            GhostStatusPill(deltaSeconds: telemetry.ghostDeltaSeconds)
+                        }
+                        Spacer()
+                        CadenceStatusPill(cadence: telemetry.currentCadenceSPM)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                    .padding(12)
-
-                    // Ghost delta pill (top-leading)
-                    if telemetry.isGhostActive {
-                        ghostDeltaPill
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    .padding(10)
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 16)
 
-                // Main Telemetry Readout (Instant Pace Gauge)
-                VStack(spacing: 4) {
-                    Text("CURRENT PACE")
-                        .font(.system(.caption, design: .rounded, weight: .bold))
-                        .foregroundColor(.gray)
-                        .tracking(2)
+                // Primary Speedometer Instrument
+                CockpitGaugeView(
+                    speedMPS: telemetry.currentSpeedMPS,
+                    paceFormatted: telemetry.rollingPaceFormatted,
+                    isRunning: telemetry.isRunning
+                )
+                .padding(.horizontal, 16)
 
-                    Text(telemetry.rollingPaceFormatted)
-                        .font(.system(size: 64, weight: .heavy, design: .rounded))
-                        .foregroundColor(Color(hex: "FF5500"))
-                        .shadow(color: Color(hex: "FF5500").opacity(0.3), radius: 12, x: 0, y: 0)
-
-                    Text("/KM")
-                        .font(.system(.headline, design: .rounded, weight: .bold))
-                        .foregroundColor(.gray)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color(hex: "121216"))
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .padding(.horizontal)
-
-                // Secondary Metrics Grid
-                HStack(spacing: 12) {
-                    MetricCard(
+                // Secondary Telemetry Row
+                HStack(spacing: 10) {
+                    HUDMetricCard(
                         title: "DISTANCE",
                         value: String(format: "%.2f", telemetry.totalDistanceMeters / 1000.0),
                         unit: "KM"
                     )
-                    MetricCard(
-                        title: "TIME",
+                    HUDMetricCard(
+                        title: "ELAPSED",
                         value: formatDuration(telemetry.activeDurationSeconds),
-                        unit: "ELAPSED"
+                        unit: "TIME",
+                        accentColor: StridesPalette.voltageOrange
                     )
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 16)
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                // Phase-driven controls
-                controlBar
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 12)
+                // Tactical Control Deck
+                cockpitControlBar
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
             }
 
-            // Location-denied overlay
             if telemetry.locationDenied {
-                locationDeniedOverlay
+                LocationDeniedCockpitOverlay()
             }
         }
         .onAppear {
             telemetry.requestPermissions()
-            // Recover a run interrupted by a crash / force-quit.
             if summaryRun == nil, telemetry.phase == .idle,
                let recovered = RunStore.shared.consumePendingRun() {
                 RunStore.shared.save(recovered)
@@ -163,105 +138,50 @@ struct LiveRunningHUDView: View {
         }
     }
 
-    // MARK: - Controls
+    // MARK: - Subviews & Controls
 
     @ViewBuilder
-    private var controlBar: some View {
+    private var cockpitControlBar: some View {
         switch telemetry.phase {
         case .idle:
-            controlButton("START CRUISE", fill: Color(hex: "FF5500"), fg: .black) {
+            Button("ENGAGE CRUISE") {
                 telemetry.startSession()
             }
+            .buttonStyle(CockpitButtonStyle(baseColor: StridesPalette.voltageOrange, foregroundColor: .black, isHero: true))
+            .sensoryFeedback(.start, trigger: telemetry.phase)
+
         case .running:
             HStack(spacing: 12) {
-                controlButton("PAUSE", fill: Color(hex: "1C1C22"), fg: .white) {
+                Button("PAUSE") {
                     telemetry.pauseSession()
                 }
-                controlButton("FINISH", fill: .red, fg: .white) {
+                .buttonStyle(CockpitButtonStyle(baseColor: StridesPalette.elevated, foregroundColor: .white))
+                .sensoryFeedback(.impact(weight: .medium), trigger: telemetry.phase)
+
+                Button("TERMINATE") {
                     telemetry.stopSession()
                     summaryRun = telemetry.lastCompletedRun
                 }
+                .buttonStyle(CockpitButtonStyle(baseColor: Color(hex: "EF4444"), foregroundColor: .white))
+                .sensoryFeedback(.stop, trigger: telemetry.phase)
             }
+
         case .paused:
             HStack(spacing: 12) {
-                controlButton("RESUME", fill: Color(hex: "FF5500"), fg: .black) {
+                Button("RESUME") {
                     telemetry.resumeSession()
                 }
-                controlButton("FINISH", fill: .red, fg: .white) {
+                .buttonStyle(CockpitButtonStyle(baseColor: StridesPalette.voltageOrange, foregroundColor: .black, isHero: true))
+                .sensoryFeedback(.start, trigger: telemetry.phase)
+
+                Button("TERMINATE") {
                     telemetry.stopSession()
                     summaryRun = telemetry.lastCompletedRun
                 }
+                .buttonStyle(CockpitButtonStyle(baseColor: Color(hex: "EF4444"), foregroundColor: .white))
+                .sensoryFeedback(.stop, trigger: telemetry.phase)
             }
         }
-    }
-
-    private func controlButton(_ title: String, fill: Color, fg: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(.headline, design: .rounded, weight: .heavy))
-                .foregroundColor(fg)
-                .frame(maxWidth: .infinity)
-                .frame(height: 60)
-                .background(fill)
-                .clipShape(Capsule())
-                .shadow(color: fill.opacity(0.4), radius: 12)
-        }
-    }
-
-    private var locationDeniedOverlay: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "location.slash.fill")
-                .font(.system(size: 40))
-                .foregroundColor(Color(hex: "FF5500"))
-            Text("Location access needed")
-                .font(.system(.title3, design: .rounded, weight: .heavy))
-                .foregroundColor(.white)
-            Text("Strides needs your location to track runs. Enable it in Settings to start a cruise.")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
-            Button {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            } label: {
-                Text("OPEN SETTINGS")
-                    .font(.system(.subheadline, design: .rounded, weight: .heavy))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 24)
-                    .frame(height: 50)
-                    .background(Color(hex: "FF5500"))
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(32)
-        .background(Color(hex: "121216"))
-        .clipShape(RoundedRectangle(cornerRadius: 28))
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        .padding(32)
-    }
-
-    /// Live "vs GHOST" indicator: green when ahead of your PB, red when behind.
-    private var ghostDeltaPill: some View {
-        let delta = telemetry.ghostDeltaSeconds
-        let ahead = delta <= 0
-        let magnitude = abs(delta)
-        return HStack(spacing: 6) {
-            Image(systemName: ahead ? "arrow.up.forward" : "arrow.down.forward")
-                .font(.system(size: 10, weight: .black))
-            VStack(alignment: .leading, spacing: 0) {
-                Text(String(format: "%@%d s", ahead ? "-" : "+", magnitude))
-                    .font(.system(.caption, design: .monospaced, weight: .heavy))
-                Text(ahead ? "AHEAD OF PB" : "BEHIND PB")
-                    .font(.system(size: 8, weight: .bold))
-                    .opacity(0.8)
-            }
-        }
-        .foregroundColor(ahead ? Color(hex: "10B981") : Color(hex: "EF4444"))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -269,46 +189,122 @@ struct LiveRunningHUDView: View {
         let sec = Int(duration) % 60
         return String(format: "%02d:%02d", min, sec)
     }
-
-    private func speedColor(for speedMPS: Double) -> Color {
-        switch speedMPS {
-        case ..<2.2: return Color(hex: "3B82F6") // Blue
-        case 2.2..<3.3: return Color(hex: "10B981") // Green
-        case 3.3..<4.2: return Color(hex: "F59E0B") // Orange
-        default: return Color(hex: "EF4444") // Crimson Sprint
-        }
-    }
 }
 
-struct MetricCard: View {
-    let title: String
-    let value: String
-    let unit: String
+// MARK: - Supplementary HUD Components
+
+struct GhostDuelMarkerView: View {
+    @State private var ping = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(.caption2, design: .rounded, weight: .bold))
-                .foregroundColor(.gray)
-                .tracking(1)
+        ZStack {
+            Circle()
+                .stroke(StridesPalette.electricCyan, lineWidth: 1.5)
+                .frame(width: ping ? 44 : 20, height: ping ? 44 : 20)
+                .opacity(ping ? 0 : 0.8)
 
-            HStack(alignment: .lastTextBaseline, spacing: 4) {
-                Text(value)
-                    .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-                Text(unit)
-                    .font(.system(.caption2, design: .rounded, weight: .bold))
-                    .foregroundColor(Color(hex: "00F0FF"))
+            Circle()
+                .fill(StridesPalette.electricCyan.opacity(0.3))
+                .frame(width: 28, height: 28)
+
+            Image(systemName: "figure.run")
+                .font(.system(size: 12, weight: .black))
+                .foregroundColor(.black)
+                .frame(width: 18, height: 18)
+                .background(StridesPalette.electricCyan)
+                .clipShape(Circle())
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                ping = true
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(hex: "121216"))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
-#Preview {
-    LiveRunningHUDView()
-        .preferredColorScheme(.dark)
+struct GhostStatusPill: View {
+    let deltaSeconds: Int
+
+    private var isAhead: Bool { deltaSeconds <= 0 }
+    private var color: Color { isAhead ? Color(hex: "10B981") : Color(hex: "EF4444") }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isAhead ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                .font(.system(size: 12, weight: .bold))
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(isAhead ? "-" : "+")\(abs(deltaSeconds))s")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                Text(isAhead ? "AHEAD" : "BEHIND")
+                    .font(.system(size: 7, weight: .black))
+                    .opacity(0.8)
+            }
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(color.opacity(0.4), lineWidth: 1))
+        .sensoryFeedback(.impact(weight: .heavy), trigger: isAhead)
+    }
+}
+
+struct CadenceStatusPill: View {
+    let cadence: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(cadence > 165 ? Color.green : Color.orange)
+                .frame(width: 6, height: 6)
+            Text("\(cadence)")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+            Text("SPM")
+                .font(.system(size: 8, weight: .black))
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(StridesTheme.hairlineBorder, lineWidth: 1))
+    }
+}
+
+struct LocationDeniedCockpitOverlay: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "location.slash.fill")
+                .font(.system(size: 38, weight: .medium))
+                .foregroundColor(StridesPalette.voltageOrange)
+
+            Text("GPS LINK OFFLINE")
+                .font(.system(.headline, design: .rounded, weight: .heavy))
+                .foregroundColor(.white)
+                .tracking(2)
+
+            Text("Instrument telemetry requires active satellite lock to record telemetry points.")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 8)
+
+            Button("AUTHORIZE SENSORS") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(CockpitButtonStyle(baseColor: StridesPalette.voltageOrange, foregroundColor: .black))
+            .padding(.top, 4)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusLarge)
+                .fill(StridesPalette.surface)
+                .overlay(RoundedRectangle(cornerRadius: StridesTheme.cornerRadiusLarge).stroke(StridesTheme.hairlineBorder, lineWidth: 1))
+        )
+        .padding(32)
+    }
 }
